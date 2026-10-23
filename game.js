@@ -4,18 +4,23 @@
   const s={distance:18,target:10,targetM:0,currentM:-1,mode:'ready',round:0,score:0,remaining:30,duration:30,hold:0,paused:false,last:0,toastUntil:0,dirty:true,intro:0,lastBeat:null,results:[],scoreReveal:null,lightPhase:0,sceneDirty:false,variant:'photo',moved:false,startDistance:18,startMagnitude:0,flash:0,hasMoved:false,cueTime:0};
   const space=$('spaceCanvas');let drag=null;
   function toast(message){$('toast').textContent=message;$('toast').classList.add('visible');s.toastUntil=performance.now()+1800;}
-  function canMove(){return !s.paused && s.mode==='play'&&s.intro<=0;}
+  function canMove(){return !s.paused && (s.mode==='ready'||s.mode==='play'&&s.intro<=0);}
   function atOrigin(){return Math.abs(s.distance-s.startDistance)<1e-7;}
   function distance(d){
     const previous=s.distance,next=P.clamp(d,5,30);
     if(Math.abs(next-previous)>1e-9)s.hasMoved=true;
-    if(s.variant==='magnitude' && Math.abs(next-previous)>1e-9){
+    if(s.mode==='play' && s.variant==='magnitude' && Math.abs(next-previous)>1e-9){
       const crossed=s.moved && Math.abs(previous-s.startDistance)>1e-7 && (previous-s.startDistance)*(next-s.startDistance)<=0;
       s.moved=true;
       if(crossed)s.flash=.4;
     }
     s.distance=next;s.dirty=true;
     space.setAttribute('aria-valuenow',s.distance.toFixed(2));space.setAttribute('aria-valuetext',s.distance.toFixed(2)+' 파섹');
+  }
+  function resetStartPosition(){
+    drag=null;
+    distance(s.variant==='magnitude'?20:18);
+    s.hasMoved=false;s.moved=false;s.flash=0;s.cueTime=0;
   }
   function renderScene(){R.scene(space,s.distance,s.currentM,s.lightPhase,{active:s.mode==='play',showDragHint:s.mode==='play'&&!s.hasMoved,cueTime:s.cueTime,reduceMotion:!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches),hideMagnitude:s.variant==='magnitude',origin:s.variant==='magnitude'&&(atOrigin()||s.flash>0)?s.startDistance:null});}
   const briefingMemory={};
@@ -63,6 +68,7 @@
     try{if(value)window.localStorage.setItem(key,value);else window.localStorage.removeItem(key);}catch{}
   }
   function openBrief(){
+    if(s.mode==='ready')resetStartPosition();
     if(skipBriefing()){play();return;}
     $('briefSkipToday').checked=false;
     if(s.mode==='play')setPaused(true);
@@ -102,7 +108,7 @@
   }
   function setPaused(value){s.paused=value;s.hold=0;$('pause').textContent=value?'계속하기':'일시정지';document.body.classList.toggle('paused',value);s.dirty=true;}
   function ready(){s.mode='ready';s.intro=0;s.lastBeat=null;$('targetPhoto').classList.remove('arriving');s.target=10;s.targetM=0;s.currentM=-1;s.score=0;s.hold=0;s.flash=0;s.moved=false;if(s.variant==='magnitude'){selectTarget();s.intro=0;}setPaused(false);$('pause').hidden=true;$('play').textContent='도전 시작 ↗';s.dirty=true;}
-  function play(){R.newStarfield();s.mode='play';s.round=0;s.score=0;s.results=[];setPaused(false);selectTarget();$('pause').hidden=false;$('play').textContent='다시 시작 ↻';}
+  function play(){R.newStarfield();resetStartPosition();s.mode='play';s.round=0;s.score=0;s.results=[];setPaused(false);selectTarget();$('pause').hidden=false;$('play').textContent='다시 시작 ↻';}
   function stat(label,value){return '<div><span>'+label+'</span><strong>'+value+'</strong></div>';}
   function revealScore(score){
     $('resultPoints').textContent='0';$('resultRank').textContent=P.rank(score);
@@ -146,7 +152,7 @@
     $('currentApparentValue').textContent=P.magnitude(s.distance,s.currentM).toFixed(2);
     $('currentAbsoluteValue').textContent=s.currentM.toFixed(1);
     $('targetTag').textContent='목표 별 A · 고정';$('targetHint').textContent='목표 등급은 관측 종료 후 공개합니다';
-    $('currentHint').textContent='빛무리와 광선을 보고 목표 사진과 비교하세요';
+    $('currentHint').textContent=s.mode==='ready'?'자유롭게 움직여 보세요 · 도전 시작 시 출발 위치로 이동합니다':'빛무리와 광선을 보고 목표 사진과 비교하세요';
     const active=s.mode==='play', entering=active && s.intro>0, waiting=active&&s.variant==='magnitude'&&!s.moved; 
     $('submitObservation').hidden=!active;
     $('submitObservation').disabled=!active || entering || s.paused || waiting;
@@ -163,12 +169,12 @@
     if(s.variant==='magnitude'){
       const revealed=s.mode==='review'||s.mode==='done';
       const showOrigin=!revealed && (atOrigin()||s.flash>0);
-      const value=revealed?P.magnitude(s.distance,s.currentM).toFixed(2):showOrigin?s.startMagnitude.toFixed(1):'?';
+      const value=revealed||s.mode==='ready'?P.magnitude(s.distance,s.currentM).toFixed(2):showOrigin?s.startMagnitude.toFixed(1):'?';
       $('currentApparentValue').textContent=value;
       $('currentGradeLabel').textContent=showOrigin?'출발 등급 m':'겉보기 등급 m';
       $('targetMagnitude').textContent=s.targetM.toFixed(1);$('targetTag').textContent='숫자 목표';
       $('targetHint').textContent='출발 밝기를 기억하며 거리를 조절하세요';
-      $('currentHint').textContent=showOrigin?'출발 위치의 기준 밝기입니다':revealed?'최종 겉보기 등급 공개':'현재 등급은 ? · 출발 위치를 지나면 기준 등급 공개';
+      $('currentHint').textContent=s.mode==='ready'?'자유롭게 움직여 보세요 · 도전 시작 시 출발 위치로 이동합니다':showOrigin?'출발 위치의 기준 밝기입니다':revealed?'최종 겉보기 등급 공개':'현재 등급은 ? · 출발 위치를 지나면 기준 등급 공개';
       if(waiting&&!s.paused){$('roundLabel').textContent='출발 준비';$('clockCaption').textContent='첫 이동부터 시작';}
     }else {$('currentGradeLabel').textContent='겉보기 등급 m';}
     if(reviewing){
@@ -216,7 +222,7 @@
   function tick(now){const dt=s.last?Math.min((now-s.last)/1000,.1):0;s.last=now;
     if(s.mode==='play'&&!s.paused && s.intro>0){s.intro=Math.max(0,s.intro-dt);s.dirty=true;}
     else if(s.mode==='play'&&!s.paused && (s.variant==='photo'||s.moved)){s.remaining=Math.max(0,s.remaining-dt);if(s.remaining<=0)advance();s.dirty=true;}
-    if(!s.paused && !document.hidden && s.mode==='play'){
+    if(!s.paused && !document.hidden && (s.mode==='ready'||s.mode==='play')){
       const reduced=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
       if(!reduced){s.lightPhase=(s.lightPhase+dt/3)%1;s.sceneDirty=true;}
     }

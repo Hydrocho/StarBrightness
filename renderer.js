@@ -38,16 +38,18 @@ window.StarRenderer = (() => {
     }
     // One fixed, monotonic tone curve for both photos across M=-5..+5.
     // It compresses the display range, without changing physical flux or scoring.
-    const tone=Math.pow(flux,.38);
-    const x=w/2,y=h*.51,b=.25+1.5*tone/(1+tone),radius=Math.min(w,h)*.27*b;
-    glow(c,x,y,radius,.55*Math.min(b,1.5));
+    const tone=Math.pow(flux,.5),intensity=tone/(1+tone);
+    const x=w/2,y=h*.51,b=.15+2.1*intensity,radius=Math.min(w,h)*.22*b;
+    glow(c,x,y,radius,.12+.86*intensity);
     c.save();c.globalCompositeOperation='screen';
+    glow(c,x,y,radius*.55,.65*intensity*intensity,'215,235,255');
     for(let axis=0;axis<2;axis++){c.save();c.translate(x,y);c.rotate(axis*Math.PI/2);
       const length=radius*.85,g=c.createLinearGradient(-length,0,length,0);
-      g.addColorStop(0,'#bedaff00');g.addColorStop(.45,`rgba(190,220,255,${Math.min(.65,b*.32)})`);g.addColorStop(.5,'#eff9ff');g.addColorStop(.55,`rgba(190,220,255,${Math.min(.65,b*.32)})`);g.addColorStop(1,'#bedaff00');
-      c.fillStyle=g;c.fillRect(-length,-.65,length*2,1.3);c.restore();}
-    glow(c,x,y,10*b,Math.min(.95,.6*b),'230,243,255');c.restore();
-    c.beginPath();c.arc(x,y,1.9,0,Math.PI*2);c.fillStyle=`rgba(245,250,255,${Math.min(1,.45+b*.4)})`;c.fill();
+      g.addColorStop(0,'#bedaff00');g.addColorStop(.45,`rgba(190,220,255,${.08+.8*intensity})`);g.addColorStop(.5,`rgba(239,249,255,${.15+.85*intensity})`);g.addColorStop(.55,`rgba(190,220,255,${.08+.8*intensity})`);g.addColorStop(1,'#bedaff00');
+      const thickness=.7+1.8*intensity;
+      c.fillStyle=g;c.fillRect(-length,-thickness/2,length*2,thickness);c.restore();}
+    glow(c,x,y,12*b,.1+.88*intensity,'230,243,255');c.restore();
+    c.beginPath();c.arc(x,y,1.9,0,Math.PI*2);c.fillStyle=`rgba(245,250,255,${.2+.8*intensity})`;c.fill();
   }
   // Unit ray from (separation,0,0), intersecting a true sphere at the origin.
   function rayHit(separation,radius,dx,dy,dz=0){
@@ -62,8 +64,8 @@ window.StarRenderer = (() => {
     // Side view encodes intrinsic luminosity, not received flux at Earth.
     // Compress the visual range while preserving brighter = smaller M.
     const luminosity=StarPhysics.flux(10,absoluteMagnitude);
-    const intrinsicTone=Math.pow(luminosity,.35);
-    const brilliance=.2+1.8*intrinsicTone/(1+intrinsicTone);
+    const intrinsicTone=Math.pow(luminosity,.5);
+    const brilliance=.15+2.35*intrinsicTone/(1+intrinsicTone);
     c.strokeStyle='#1b2b41';c.lineWidth=1;
     const floor=y+36;
     for(let i=-5;i<16;i++){c.beginPath();c.moveTo(w*.52+i*29,floor-24);c.lineTo(w*.52+i*135,h);c.stroke();}
