@@ -21,6 +21,12 @@ context.Date=class extends Date {constructor(){super('2026-10-22T12:00:00');}};
 nodes.photoMode.onclick();nodes.play.onclick();assert.ok(nodes.briefDialog.open);assert.equal(nodes.briefSkipToday.checked,false);nodes.briefCancel.onclick();nodes.magnitudeMode.onclick();nodes.play.onclick();assert.ok(nodes.briefDialog.open);
 console.log('PASS: independent daily preferences stored for both modes, skip on same day, briefing restored next day.');
 
+nodes.briefCancel.onclick();
+let comparisonOpened=0;context.window.StarComparison={open(){comparisonOpened++;},renderRecords(){}};
+nodes.comparisonMode.onclick();step(5);assert.equal(comparisonOpened,1);assert.equal(nodes.comparisonPanel.hidden,false);assert.equal(nodes.play.hidden,true);assert.equal(nodes.pause.hidden,true);
+nodes.photoMode.onclick();step(1);assert.equal(nodes.comparisonPanel.hidden,true);assert.equal(nodes.play.hidden,false);
+console.log('PASS: third-mode integration stops the old challenge and restores original mode controls.');
+
 // Today's records: stored values, previous-day filtering, completion and max preservation.
 nodes.briefCancel.onclick();
 saved.set('starlight.dailyRecords.v1',JSON.stringify({date:'2026-10-21',photo:999,magnitude:888}));
@@ -34,3 +40,45 @@ nodes.feedbackDialog.close();nodes.todayRecords.onclick();context.Date=class ext
 console.log('PASS: localStorage read/write, lower score preserves best, both modes, pause, rollover while modal open.');
 
 saved.set('starlight.dailyRecords.v1',JSON.stringify({date:'2026-10-23',photo:[600,950,800,950,1000,700,400],magnitude:[0,10]}));nodes.recordsClose.onclick();nodes.todayRecords.onclick();const rows=nodes.photoTopFive.innerHTML;assert.equal((rows.match(/<li>/g)||[]).length,5);assert.ok(rows.indexOf('1,000')<rows.indexOf('950'));assert.equal((rows.match(/950/g)||[]).length,2);assert.ok(!rows.includes('600'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('>0<'));console.log('PASS: top-five descending, duplicate scores retained, legacy score migration, separate mode rankings.');
+
+// Storage failure regressions: readable stale storage must not erase new scores.
+const recordKey='starlight.dailyRecords.v1';
+let failRead=false,failWrite=true,testScore=321;
+context.Date=class extends Date {constructor(){super('2026-10-24T12:00:00');}};
+saved.set(recordKey,JSON.stringify({date:'2026-10-24',photo:[100],magnitude:[200]}));
+context.StarPhysics={...P,score:()=>testScore};
+context.window.localStorage={getItem(k){if(k===recordKey&&failRead)throw Error('read denied');return saved.get(k)||null;},setItem(k,v){if(k===recordKey&&failWrite)throw Error('quota exceeded');saved.set(k,v);},removeItem:k=>saved.delete(k)};
+vm.runInNewContext(fs.readFileSync('game.js','utf8'),context);
+function completeChallenge(mode){
+  nodes.recordsDialog.close();nodes.feedbackDialog.close();nodes[mode+'Mode'].onclick();nodes.briefStart.onclick();
+  for(let i=0;i<5;i++){
+    step(20);if(mode==='magnitude')key('ArrowRight');
+    nodes.submitObservation.onclick();step(1);
+    if(i<4)nodes.feedbackNext.onclick();
+  }
+  nodes.feedbackDialog.close();
+}
+completeChallenge('photo');nodes.todayRecords.onclick();
+assert.ok(nodes.photoTopFive.innerHTML.includes('321'));assert.ok(nodes.photoTopFive.innerHTML.includes('100'));
+assert.ok(nodes.recordsNote.textContent.includes('일부 기록'));
+nodes.recordsClose.onclick();nodes.todayRecords.onclick();assert.equal((nodes.photoTopFive.innerHTML.match(/321/g)||[]).length,1);
+testScore=654;completeChallenge('magnitude');nodes.todayRecords.onclick();
+assert.ok(nodes.photoTopFive.innerHTML.includes('321'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('654'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('200'));
+// A subsequent read failure preserves the last readable baseline and pending scores.
+failRead=true;nodes.recordsClose.onclick();nodes.todayRecords.onclick();assert.ok(nodes.photoTopFive.innerHTML.includes('100'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('654'));
+failRead=false;failWrite=false;testScore=500;completeChallenge('photo');
+const recovered=JSON.parse(saved.get(recordKey));assert.deepEqual(recovered.photo,[500,321,100]);assert.deepEqual(recovered.magnitude,[654,200]);
+nodes.todayRecords.onclick();assert.ok(!nodes.recordsNote.textContent.includes('일부 기록'));nodes.recordsClose.onclick();
+// Refresh uses persisted values exactly once, including the formerly unsaved scores.
+vm.runInNewContext(fs.readFileSync('game.js','utf8'),context);nodes.todayRecords.onclick();assert.equal((nodes.photoTopFive.innerHTML.match(/321/g)||[]).length,1);assert.ok(nodes.magnitudeTopFive.innerHTML.includes('654'));
+// Cached records survive a transient read error even before another challenge is played.
+failRead=true;nodes.recordsClose.onclick();nodes.todayRecords.onclick();assert.ok(nodes.photoTopFive.innerHTML.includes('500'));failRead=false;
+// A broken quiz module cannot prevent access to the original two leaderboards.
+context.window.StarComparison.renderRecords=()=>{throw Error('damaged quiz record');};
+nodes.recordsClose.onclick();nodes.todayRecords.onclick();assert.ok(nodes.recordsDialog.open);assert.ok(nodes.photoTopFive.innerHTML.includes('500'));assert.ok(nodes.comparisonTopFive.innerHTML.includes('불러오지 못했습니다'));
+context.window.StarComparison.renderRecords=()=>{};
+// A completed challenge belongs to its completion date, and yesterday's failed saves expire.
+failWrite=true;testScore=777;completeChallenge('magnitude');
+context.Date=class extends Date {constructor(){super('2026-10-25T12:00:00');}};
+nodes.todayRecords.onclick();assert.ok(nodes.photoTopFive.innerHTML.includes('아직 기록'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('아직 기록'));
+console.log('PASS: failed writes with stale readable storage, both modes, repeated reads, cached read fallback, persistence recovery without duplicates, reload, quiz isolation and pending-score day rollover.');

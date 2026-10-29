@@ -22,7 +22,7 @@
     distance(s.variant==='magnitude'?20:18);
     s.hasMoved=false;s.moved=false;s.flash=0;s.cueTime=0;
   }
-  function renderScene(){R.scene(space,s.distance,s.currentM,s.lightPhase,{active:s.mode==='play',showDragHint:s.mode==='play'&&!s.hasMoved,cueTime:s.cueTime,reduceMotion:!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches),hideMagnitude:s.variant==='magnitude',origin:s.variant==='magnitude'&&(atOrigin()||s.flash>0)?s.startDistance:null});}
+  function renderScene(){if(s.variant==='comparison')return;R.scene(space,s.distance,s.currentM,s.lightPhase,{active:s.mode==='play',showDragHint:s.mode==='play'&&!s.hasMoved,cueTime:s.cueTime,reduceMotion:!!(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches),hideMagnitude:s.variant==='magnitude',origin:s.variant==='magnitude'&&(atOrigin()||s.flash>0)?s.startDistance:null});}
   const briefingMemory={};
   function todayKey(){
     const d=new Date();
@@ -30,32 +30,48 @@
   }
   const recordsKey='starlight.dailyRecords.v1';
   let recordsMemory=null,recordsStorageFailed=false;
+  let pendingRecords=[];
   function readRecords(){
+    const date=todayKey();
     let data=recordsMemory;
-    try{const raw=window.localStorage.getItem(recordsKey);if(raw)data=JSON.parse(raw);}catch{}
-    if(!data || data.date!==todayKey())return {date:todayKey(),photo:[],magnitude:[]};
-    const clean={date:data.date,photo:[],magnitude:[]};
+    pendingRecords=pendingRecords.filter(record=>record.date===date);
+    try{
+      const raw=window.localStorage.getItem(recordsKey);
+      data=raw?JSON.parse(raw):null;
+      recordsMemory=data;
+      recordsStorageFailed=pendingRecords.length>0;
+    }catch{recordsStorageFailed=true;}
+    const clean={date,photo:[],magnitude:[]};
     for(const mode of ['photo','magnitude']){
       // Migrate the former single best score into a one-entry leaderboard.
-      const scores=Array.isArray(data[mode])?data[mode]:[data[mode]];
-      clean[mode]=scores.filter(n=>Number.isInteger(n)&&n>=0&&n<=1000).sort((a,b)=>b-a).slice(0,5);
+      const stored=data&&data.date===date?data[mode]:[];
+      const scores=Array.isArray(stored)?stored:[stored];
+      clean[mode]=scores.filter(n=>Number.isInteger(n)&&n>=0&&n<=1000)
+        .concat(pendingRecords.filter(record=>record.mode===mode).map(record=>record.score))
+        .sort((a,b)=>b-a).slice(0,5);
     }
     return clean;
   }
   function saveDailyRecord(){
     if(s.results.length!==5)return;
+    pendingRecords.push({date:todayKey(),mode:s.variant,score:s.score});
     const data=readRecords();
-    data[s.variant]=[...data[s.variant],s.score].sort((a,b)=>b-a).slice(0,5);
-    recordsMemory=data;
-    try{window.localStorage.setItem(recordsKey,JSON.stringify(data));recordsStorageFailed=false;}catch{recordsStorageFailed=true;}
+    try{
+      window.localStorage.setItem(recordsKey,JSON.stringify(data));
+      recordsMemory=data;pendingRecords=[];recordsStorageFailed=false;
+    }catch{recordsStorageFailed=true;}
   }
   function displayRecords(){
+    try{window.StarComparison?.renderRecords();}
+    catch{
+      $('comparisonTopFive').innerHTML='<li class="record-empty">퀴즈 기록을 불러오지 못했습니다.</li>';
+    }
     const data=readRecords();$('recordsDate').textContent=data.date+' · 오늘 완료한 도전';
     for(const mode of ['photo','magnitude']){
       const scores=data[mode];
       $(mode+'TopFive').innerHTML=scores.length?scores.map((score,i)=>'<li><span class="record-place">'+(i+1)+'</span><strong>'+score.toLocaleString('ko-KR')+'<small>점</small></strong><b>'+P.rank(score)+'</b></li>').join(''):'<li class="record-empty">아직 기록이 없어요</li>';
     }
-    $('recordsNote').textContent=recordsStorageFailed?'브라우저 저장소를 사용할 수 없어 현재 화면에서만 기록을 유지합니다.':'완료한 도전별 평균 점수 · 1,000점 만점 · 같은 점수도 별도 기록';
+    $('recordsNote').textContent=recordsStorageFailed?'저장소 접근에 문제가 있어 일부 기록은 현재 페이지에서만 유지됩니다. 페이지를 닫으면 저장되지 않은 기록이 사라질 수 있습니다.':'사진·등급 맞추기는 5회 완료 후 평균 점수를 저장합니다. 각 모드 오늘의 상위 5개 · 1,000점 만점 · 같은 점수도 별도 기록';
   }
   function skipBriefing(){
     const key='starlight.briefing.'+s.variant;
@@ -141,6 +157,7 @@
     $('feedbackTable').innerHTML='';$('feedbackNext').textContent='다시 도전하기';revealScore(s.score);
   }
   function draw(){
+    if(s.variant==='comparison'){s.dirty=false;return;}
     space.setAttribute('aria-disabled',String(!canMove()));
     space.style.cursor=canMove()?'ew-resize':'default';
     const reviewing=s.mode==='review';
@@ -195,13 +212,20 @@
   space.addEventListener('keydown',e=>{if(!canMove())return;if(['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();if(e.key==='Home')distance(5);else if(e.key==='End')distance(30);else distance(s.distance+(e.key==='ArrowLeft'?-1:1)*(e.shiftKey?.5:.05));}});
   $('submitObservation').onclick=()=>{if(s.mode==='play' && !s.paused && s.intro<=0 && (s.variant==='photo'||s.moved))advance();};
   function switchMode(variant){
-    s.variant=variant;drag=null;document.body.classList.toggle('magnitude-mode',variant==='magnitude');
+    s.variant=variant;drag=null;
+    document.body.classList.toggle('comparison-mode',variant==='comparison');
+    $('comparisonPanel').hidden=variant!=='comparison';
+    $('play').hidden=variant==='comparison';
+    $('comparisonMode').classList.toggle('selected',variant==='comparison');
+    $('comparisonMode').setAttribute('aria-pressed',String(variant==='comparison'));
+    if(variant==='comparison')window.StarComparison?.open();document.body.classList.toggle('magnitude-mode',variant==='magnitude');
     $('photoMode').classList.toggle('selected',variant==='photo');$('magnitudeMode').classList.toggle('selected',variant==='magnitude');
     $('photoMode').setAttribute('aria-pressed',String(variant==='photo'));$('magnitudeMode').setAttribute('aria-pressed',String(variant==='magnitude'));
     $('numberTarget').hidden=variant!=='magnitude';$('targetCanvas').hidden=variant==='magnitude';
     $('targetTitle').textContent=variant==='magnitude'?'목표 등급':'목표 사진';
     ready();
   }
+  $('comparisonMode').onclick=()=>switchMode('comparison');
   $('photoMode').onclick=()=>switchMode('photo');$('magnitudeMode').onclick=()=>switchMode('magnitude');
   $('play').onclick=openBrief;
   $('briefSkipToday').onchange=saveBriefingPreference;
