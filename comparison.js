@@ -24,7 +24,7 @@
   function direction(){return {x:1,y:0,z:0};}
   function project(v,angle=0){return {x:v.x*Math.cos(angle)-v.y*Math.sin(angle),y:v.x*Math.sin(angle)+v.y*Math.cos(angle),z:0};}
   function dragDistance(start,dx,dy,v){const norm=v.x*v.x+v.y*v.y;return norm<.025?start:P.clamp(start+(dx*v.x-dy*v.y)/(22*norm),3,30);}
-  window.StarComparisonModel={generate,solutions,grade,direction,project,dragDistance,starPosition,labelLayout,starAppearance,nameOffsets};
+  window.StarComparisonModel={generate,solutions,grade,direction,project,dragDistance,starPosition,labelLayout,starAppearance,nameOffsets,resultHTML};
   let dragStart=null,detailSelected=null;
   const $=id=>document.getElementById(id),panel=$('comparisonPanel');
   let stars=generate(),mode='practice',selected='A',answers,report=null,dragId=null;
@@ -93,8 +93,36 @@
   }
   function scene(data,interactive){const offsets=nameOffsets(data);return '<div class="compare-scene circle-scene" data-stars="'+esc(JSON.stringify(data))+'"><div class="circle-banner"><strong>10 pc</strong><span>지구에서 10 pc · m = M</span></div><div class="circle-scroll"><div class="compare-circle"><div class="compare-circle-art">'+circleArtwork(data,interactive)+'</div>'+data.map(s=>{const p=starPosition(s),light=starAppearance(s.M);return '<button type="button" class="compare-star '+(selected===s.id?'selected':'')+'" data-star="'+s.id+'" aria-label="별 '+s.id+', 거리 '+s.d.toFixed(2)+' pc, 겉보기등급 '+s.m.toFixed(1)+', 절대등급 '+s.M.toFixed(1)+'" aria-pressed="'+(selected===s.id)+'" style="--name-offset:'+offsets[s.id]+'px;--star-opacity:'+light.opacity+';--star-glow:'+light.glow+'px;--star-core:'+light.core+'px;left:'+p.x/8+'%;top:'+p.y/3.4+'%" '+(!interactive?'data-inspect="true"':'')+'><i class="star-light" aria-hidden="true">✦</i><span>'+s.id+'</span></button>';}).join('')+'</div></div><p class="circle-legend">별을 누르면 등급을 표시합니다. 같은 거리는 같은 위치에 놓입니다. 겹친 별은 왼쪽 A~E 버튼으로 선택하세요.</p></div>';}
   function resultHTML(data,a){
-    const r=grade(data,a),answerText=x=>x.length?x.join(', '):'선택 없음';
-    return '<div class="compare-result"><strong>'+r.score.toLocaleString('ko-KR')+'점 · '+r.correct+'/13 정답 · '+P.rank(r.score)+'</strong><p>각 문항 동일 배점 · 선택 문제는 해당하는 별을 모두 골라야 정답입니다.</p></div>'+table(data)+'<ol class="compare-review">'+r.key.delta.map((n,i)=>'<li class="'+(r.checks[i]?'correct':'incorrect')+'">'+(r.checks[i]?'✓':'✕')+' 별 '+ids[i]+'의 m − M: 내 답 '+esc(a.delta[i]||'미응답')+' / 정답 <b>'+n.toFixed(1)+'</b></li>').join('')+r.key.groups.map((g,i)=>'<li class="'+(r.checks[5+i]?'correct':'incorrect')+'">'+(r.checks[5+i]?'✓':'✕')+' '+labels[i]+': 내 답 '+esc(answerText(a.groups[i]))+' / 정답 <b>'+answerText(g)+'</b></li>').join('')+'<li class="'+(r.checks[12]?'correct':'incorrect')+'">'+(r.checks[12]?'✓':'✕')+' 가까운 순서: 내 답 '+esc(a.order.join(' → ')||'미응답')+' / 정답 <b>'+r.key.order.join(' → ')+'</b></li></ol><p class="compare-explanation">m − M = 5 log₁₀(d / 10). 차이가 0이면 10 pc, 양수이면 더 멀고 음수이면 더 가깝습니다. 차이가 작을수록 가깝고, m이 작을수록 밝게 보이며 M이 작을수록 실제로 밝습니다.</p>'+scene(data.map(s=>({...s,d:10*10**((s.m-s.M)/5)})),false)+'<p>'+data.map(s=>'별 '+s.id+': '+(10*10**((s.m-s.M)/5)).toFixed(2)+' pc').join(' · ')+'</p>';
+    const r=grade(data,a),fmt=n=>n.toFixed(1).replace('-', '−');
+    const answerText=x=>x.length?x.join(', '):'선택 없음';
+    const relation=n=>n===0?'차이가 0이므로 지구에서 10 pc에 있습니다.':n>0?'차이가 양수이므로 지구에서 10 pc보다 멉니다.':'차이가 음수이므로 지구에서 10 pc보다 가깝습니다.';
+    const calculations=data.map((star,i)=>{
+      const n=r.key.delta[i],raw=a.delta[i],blank=raw==null||String(raw).trim()==='',value=Number(raw),correct=r.checks[i];
+      let advice=correct?'계산과 부호가 맞습니다.':blank?'답을 쓰지 않았습니다. m에서 M을 빼 보세요.':Number.isFinite(value)&&Math.abs(value+n)<1e-7&&n!==0?'정답과 부호가 반대입니다. 빼는 순서가 m − M인지, 음수의 부호를 바르게 처리했는지 확인하세요.':'계산 결과가 다릅니다. 아래 식에 두 등급을 대입해 소수와 부호를 다시 확인하세요.';
+      return '<tr class="'+(correct?'correct':'incorrect')+'"><th scope="row">별 '+star.id+'</th><td class="student-answer">'+esc(blank?'미응답':raw)+'</td><td><b>'+fmt(n)+'</b></td><td>'+(correct?'✓ 정답':'✕ 오답')+'</td></tr><tr class="calculation-detail"><td colspan="4"><strong>'+fmt(star.m)+' − ('+fmt(star.M)+') = '+fmt(n)+'</strong><p>'+advice+(star.M<0?' 음수를 빼면 더하기로 바뀝니다: '+fmt(star.m)+' + '+fmt(-star.M)+' = '+fmt(n)+'.':'')+'</p><p>'+relation(n)+'</p></td></tr>';
+    }).join('');
+    const evidence=data.map((s,i)=>s.id+': '+fmt(r.key.delta[i])).join(' · ');
+    const explanations=[
+      'm − M = 0인 별을 고릅니다. 10 pc에서는 겉보기등급과 절대등급이 같습니다.',
+      'm − M > 0인 별을 모두 고릅니다. 10 pc보다 멀어져 더 어둡게 보이므로 m이 M보다 큽니다.',
+      'm − M < 0인 별을 모두 고릅니다. 10 pc보다 가까워 더 밝게 보이므로 m이 M보다 작습니다.',
+      'm − M이 가장 작은 별이 가장 가깝습니다. 겉보기등급 m만 비교하면 실제 밝기가 다른 별의 거리를 판단할 수 없습니다.',
+      'm − M이 가장 큰 별이 가장 멉니다. 절대등급 M만이 아니라 두 등급의 차이를 비교하세요.',
+      '겉보기등급 m이 가장 작은 별을 고릅니다. 등급 숫자가 작을수록 지구에서 밝게 보입니다.',
+      '절대등급 M이 가장 작은 별을 고릅니다. 모든 별을 10 pc에 놓았을 때의 밝기이므로 실제 밝기를 비교할 수 있습니다.'
+    ];
+    const choices=r.key.groups.map((g,i)=>{
+      const missing=g.filter(id=>!a.groups[i].includes(id)),extra=a.groups[i].filter(id=>!g.includes(id));
+      const values=i<5?'등급 차이: '+evidence:(i===5?'겉보기등급 m: ':'절대등급 M: ')+data.map(s=>s.id+': '+fmt(i===5?s.m:s.M)).join(' · ');
+      return '<li class="review-question"><h4>'+labels[i]+'</h4><p class="'+(r.checks[5+i]?'correct':'incorrect')+'">'+(r.checks[5+i]?'✓ 정답':'✕ 오답')+' · 내 선택: '+esc(answerText(a.groups[i]))+' / 정답: <b>'+answerText(g)+'</b></p>'+(!r.checks[5+i]?'<p>빠뜨린 별: '+answerText(missing)+' · 잘못 고른 별: '+esc(answerText(extra))+'</p>':'')+'<p>'+explanations[i]+'</p><p class="review-evidence">'+values+'</p>'+(g.length>1?'<p>조건에 맞는 별이 여러 개이므로 모두 골라야 정답입니다.</p>':'')+'</li>';
+    }).join('');
+    const mismatches=r.key.order.map((id,i)=>a.order[i]===id?'':(i+1)+'번째: '+esc(a.order[i]||'빈칸')+' → '+id).filter(Boolean);
+    const ordered=r.key.order.map(id=>{const i=data.findIndex(s=>s.id===id);return id+' ('+fmt(r.key.delta[i])+')';}).join(' → ');
+    return '<div class="compare-result"><strong>'+r.score.toLocaleString('ko-KR')+'점 · '+r.correct+'/13 정답 · '+P.rank(r.score)+'</strong><p>각 문항 동일 배점 · 선택 문제는 해당하는 별을 모두 골라야 정답입니다.</p></div>'+table(data)+
+      '<h3>① 등급 차이 계산 · 내 답과 비교</h3><div class="compare-table-wrap"><table class="calculation-review"><thead><tr><th scope="col">별</th><th scope="col">학생이 쓴 값</th><th scope="col">정답 m − M</th><th scope="col">판정</th></tr></thead><tbody>'+calculations+'</tbody></table></div>'+
+      '<h3>② 조건에 맞는 별 · 선택 이유</h3><ol class="compare-review detailed-review">'+choices+'</ol>'+
+      '<h3>③ 가까운 별부터 · 거리 순서 해석</h3><div class="review-question"><p class="'+(r.checks[12]?'correct':'incorrect')+'">'+(r.checks[12]?'✓ 정답':'✕ 오답')+' · 내 순서: '+esc(a.order.join(' → ')||'미응답')+'</p><p>정답: <b>'+r.key.order.join(' → ')+'</b></p>'+(mismatches.length?'<p>순서가 다른 위치: '+mismatches.join(' / ')+'</p>':'')+'<p>등급 차이가 작은 별부터 나열합니다. 음수 → 0 → 양수 순이며, 음수끼리는 더 작은 값이 먼저입니다.</p><p class="review-evidence">별 (m − M): '+ordered+'</p></div>'+
+      '<p class="compare-explanation">거리 관계: m − M = 5 log₁₀(d / 10). 실제 거리는 d = 10 × 10^((m − M) / 5) pc입니다. 아래 지도는 정답 등급 차이로 계산한 위치입니다.</p>'+scene(data.map(s=>({...s,d:10*10**((s.m-s.M)/5)})),false)+'<p>'+data.map(s=>'별 '+s.id+': '+(10*10**((s.m-s.M)/5)).toFixed(2)+' pc').join(' · ')+'</p>';
   }
   function render(){
     panel.innerHTML='<div class="compare-heading"><div><span class="eyebrow">FIVE STAR LAB</span><h2>별의 거리 퀴즈</h2></div><div class="compare-actions"><button data-mode="practice" aria-pressed="'+(mode==='practice')+'" class="'+(mode==='practice'?'selected':'')+'">연습 모드</button><button data-mode="exam" aria-pressed="'+(mode==='exam')+'" class="'+(mode==='exam'?'selected':'')+'">시험 모드</button><button id="compareNew">새 랜덤 별 5개</button></div></div><p class="compare-muted">'+(mode==='practice'?'별을 선택하고 지구 쪽 또는 바깥쪽으로 드래그하거나 거리 슬라이더를 움직여 보세요. 절대등급은 유지되고 겉보기등급이 바뀝니다.':'제한 시간 없이 13문항을 풀어 보세요. 제출하면 채점 결과와 실제 거리를 공개합니다. 새 문제나 연습 모드로 전환하면 작성 중인 답은 초기화됩니다.')+'</p>';

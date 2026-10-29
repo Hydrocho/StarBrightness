@@ -136,3 +136,17 @@ saved.set(quizKey,JSON.stringify([{...base,date:'2026-10-31',startedAt:undefined
 vm.runInContext(fs.readFileSync('comparison.js','utf8'),context);context.window.StarComparison.renderRecords();
 assert.ok(node('comparisonTopFive').innerHTML.indexOf('03:20')<node('comparisonTopFive').innerHTML.indexOf('02:10'));assert.ok(node('comparisonTopFive').innerHTML.includes('시작 기록 없음'));
 console.log('PASS: latest-five ordering regardless of score, start/end seconds, fresh-exam timestamps, midnight completion date, and legacy timestamps.');
+
+// Review must preserve submitted zero and explain arithmetic and selection errors.
+const reviewStars=[{id:'A',m:1,M:-2},{id:'B',m:-2,M:1},{id:'C',m:2,M:2},{id:'D',m:0,M:-1},{id:'E',m:3,M:1}];
+const reviewKey=model.solutions(reviewStars);
+const reviewAnswers={delta:['-3','3',0,'2','2'],groups:reviewKey.groups.map(g=>[...g]),order:[...reviewKey.order].reverse()};
+reviewAnswers.groups[0]=['A'];
+const reviewHTML=model.resultHTML(reviewStars,reviewAnswers);
+assert.ok(reviewHTML.includes('학생이 쓴 값'));assert.ok(reviewHTML.includes('1.0 − (−2.0) = 3.0'));
+assert.ok(reviewHTML.includes('음수를 빼면'));assert.ok(reviewHTML.includes('부호가 반대'));
+assert.ok(reviewHTML.includes('빠뜨린 별: C'));assert.ok(reviewHTML.includes('잘못 고른 별: A'));
+assert.ok(reviewHTML.includes('등급 차이가 작은 별부터'));assert.ok(reviewHTML.includes('2.0 − (2.0) = 0.0'));
+assert.ok(!reviewHTML.includes('미응답'));
+assert.ok(reviewHTML.includes('순서가 다른 위치'));
+console.log('PASS: worked arithmetic, submitted numeric zero, sign feedback, selection differences and ordering explanation.');
