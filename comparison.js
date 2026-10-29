@@ -28,21 +28,36 @@
   let dragStart=null,detailSelected=null;
   const $=id=>document.getElementById(id),panel=$('comparisonPanel');
   let stars=generate(),mode='practice',selected='A',answers,report=null,dragId=null;
-  let memory=[],storageFailed=false;
+  let memory=[],storageFailed=false,examStartedAt=null;
   const storageKey='starlight.comparisonRecords.v1';
   function dateKey(){const d=new Date();return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
   const esc=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  function completionTime(record){
+    const timestamp=Date.parse(record.endedAt);
+    if(Number.isFinite(timestamp))return timestamp;
+    // Older records have only a localized completion time, without seconds.
+    const match=String(record.time||'').match(/^(오전|오후)?\s*(\d{1,2}):(\d{2})/);
+    if(!match)return 0;
+    let hour=Number(match[2]);
+    if(match[1])hour=hour%12+(match[1]==='오후'?12:0);
+    return Date.parse(record.date+'T'+String(hour).padStart(2,'0')+':'+match[3]+':00')||0;
+  }
+  function timeLabel(value){
+    const timestamp=Date.parse(value);
+    return Number.isFinite(timestamp)?new Date(timestamp).toLocaleString('ko-KR',{month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false}):'기록 없음';
+  }
+  function recordTimes(record){return '<div class="quiz-record-times"><span>시작 '+esc(timeLabel(record.startedAt))+'</span><span>종료 '+esc(record.endedAt?timeLabel(record.endedAt):record.time||'기록 없음')+'</span></div>';}
   function read(){
     if(!storageFailed)try{const raw=localStorage.getItem(storageKey);if(raw)memory=JSON.parse(raw);}catch{storageFailed=true;}
     if(!Array.isArray(memory))memory=[];
-    return memory.filter(r=>r&&typeof r==='object'&&r.date===dateKey()&&Number.isInteger(r.score)&&r.score>=0&&r.score<=1000&&Array.isArray(r.stars)&&r.stars.length===5&&r.answers&&Array.isArray(r.answers.delta)&&r.answers.delta.length===5&&Array.isArray(r.answers.groups)&&r.answers.groups.length===7&&r.answers.groups.every(Array.isArray)&&Array.isArray(r.answers.order)&&r.stars.every(s=>s&&typeof s==='object'&&ids.includes(s.id)&&Number.isFinite(s.m)&&Number.isFinite(s.M)));
+    return memory.filter(r=>r&&typeof r==='object'&&r.date===dateKey()&&Number.isInteger(r.score)&&r.score>=0&&r.score<=1000&&Array.isArray(r.stars)&&r.stars.length===5&&r.answers&&Array.isArray(r.answers.delta)&&r.answers.delta.length===5&&Array.isArray(r.answers.groups)&&r.answers.groups.length===7&&r.answers.groups.every(Array.isArray)&&Array.isArray(r.answers.order)&&r.stars.every(s=>s&&typeof s==='object'&&ids.includes(s.id)&&Number.isFinite(s.m)&&Number.isFinite(s.M))).sort((a,b)=>completionTime(b)-completionTime(a)).slice(0,5);
   }
   function save(){
-    const entry={date:dateKey(),time:new Date().toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}),stars:JSON.parse(JSON.stringify(stars)),answers:JSON.parse(JSON.stringify(answers)),score:report.score};
-    memory=[...read(),entry].sort((a,b)=>b.score-a.score).slice(0,5);
+    const entry={date:dateKey(),startedAt:examStartedAt,endedAt:new Date().toISOString(),stars:JSON.parse(JSON.stringify(stars)),answers:JSON.parse(JSON.stringify(answers)),score:report.score};
+    memory=[entry,...read()].sort((a,b)=>completionTime(b)-completionTime(a)).slice(0,5);
     try{localStorage.setItem(storageKey,JSON.stringify(memory));storageFailed=false;}catch{storageFailed=true;}
   }
-  function reset(nextMode){mode=nextMode;stars=generate();selected='A';detailSelected=null;report=null;answers={delta:Array(5).fill(''),groups:labels.map(()=>[]),order:[]};render();}
+  function reset(nextMode){mode=nextMode;examStartedAt=mode==='exam'?new Date().toISOString():null;stars=generate();selected='A';detailSelected=null;report=null;answers={delta:Array(5).fill(''),groups:labels.map(()=>[]),order:[]};render();}
   function table(data){return '<div class="compare-table-wrap"><table class="compare-table"><caption>별 A~E의 겉보기등급과 절대등급</caption><thead><tr><th scope="col">별</th>'+data.map(s=>'<th scope="col">'+esc(s.id)+'</th>').join('')+'</tr></thead><tbody>'+[['겉보기등급 m','m'],['절대등급 M','M']].map(([title,key])=>'<tr><th scope="row">'+title+'</th>'+data.map(s=>'<td>'+s[key].toFixed(1)+'</td>').join('')+'</tr>').join('')+'</tbody></table></div>';}
   function starPosition(star){const v=direction(star);return {x:60+v.x*star.d*22,y:170-v.y*star.d*22};}
   function labelLayout(data){
@@ -128,9 +143,9 @@
   panel.addEventListener('keydown',e=>{const b=e.target.closest('[data-star]');if(!b||mode!=='practice'||!['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key))return;e.preventDefault();selected=b.dataset.star;detailSelected=selected;const star=stars.find(s=>s.id===selected);move(star.d+(['ArrowRight','ArrowUp'].includes(e.key)?1:-1)*(e.shiftKey?1:.1));});
   function renderRecords(){
     const records=read(),list=$('comparisonTopFive');
-    list.innerHTML=records.length?records.map((r,i)=>'<li><span class="record-place">'+(i+1)+'</span><strong>'+r.score.toLocaleString('ko-KR')+'<small>점</small></strong><button type="button" data-record="'+i+'">'+esc(r.time)+' · 결과 보기</button></li>').join(''):'<li class="record-empty">아직 기록이 없어요</li>';
-    $('comparisonStorageNote').textContent=storageFailed?'현재 페이지에서만 기록을 유지합니다.':'13문항 · 1,000점 만점 · 오늘의 상위 5개 시험';
-    list.onclick=e=>{const b=e.target.closest('[data-record]');if(!b)return;const r=records[Number(b.dataset.record)];$('comparisonRecordContent').innerHTML=resultHTML(r.stars,r.answers);$('comparisonRecordDialog').showModal();};
+    list.innerHTML=records.length?records.map((r,i)=>'<li><span class="record-place">'+(i+1)+'</span><strong>'+r.score.toLocaleString('ko-KR')+'<small>점</small></strong>'+recordTimes(r)+'<button type="button" data-record="'+i+'">결과 보기</button></li>').join(''):'<li class="record-empty">아직 기록이 없어요</li>';
+    $('comparisonStorageNote').textContent=storageFailed?'현재 페이지에서만 기록을 유지합니다.':'13문항 · 1,000점 만점 · 오늘의 최근 5개 시험 · 최신순';
+    list.onclick=e=>{const b=e.target.closest('[data-record]');if(!b)return;const r=records[Number(b.dataset.record)];$('comparisonRecordContent').innerHTML=recordTimes(r)+resultHTML(r.stars,r.answers);$('comparisonRecordDialog').showModal();};
   }
   $('comparisonRecordContent').addEventListener('click',e=>{const b=e.target.closest('[data-inspect]');if(b)inspectScene(b);});
   $('comparisonRecordClose').onclick=()=>$('comparisonRecordDialog').close();

@@ -9,7 +9,7 @@ key('ArrowRight');step(1);assert.equal(lastOptions.showDragHint,false);assert.eq
 key('Home');step(6);assert.equal(nodes.currentApparentValue.textContent,'?');key('End');step(1);assert.equal(nodes.currentApparentValue.textContent,start);step(5);assert.equal(nodes.currentApparentValue.textContent,'?');
 nodes.pause.onclick();step(1);const paused=nodes.timeValue.textContent;key('Home');step(10);assert.equal(nodes.timeValue.textContent,paused);nodes.pause.onclick();nodes.submitObservation.onclick();step(1);assert.ok(nodes.feedbackDialog.open);assert.notEqual(nodes.currentApparentValue.textContent,'?');assert.ok(!nodes.numberTarget.hidden);assert.equal(nodes.currentGradeLabel.textContent,'내가 맞춘 등급 m');
 for(let round=1;round<5;round++){nodes.feedbackNext.onclick();step(20);assert.ok(lastOptions.showDragHint);assert.equal(nodes.timeValue.textContent,'30.0');key('Home');step(320);assert.equal(nodes.feedbackEyebrow.textContent,'OBSERVATION '+(round+1)+' / 5');}
-nodes.feedbackNext.onclick();step(1);assert.equal(nodes.feedbackTitle.textContent,'최종 탐사 등급');nodes.feedbackNext.onclick();nodes.briefCancel.onclick();nodes.photoMode.onclick();step(1);assert.ok(!nodes.targetCanvas.hidden);assert.ok(!lastOptions.hideMagnitude);nodes.briefStart.onclick();step(20);assert.ok(nodes.numberTarget.hidden);assert.ok(Number(nodes.timeValue.textContent)<30);nodes.submitObservation.onclick();step(1);assert.equal(nodes.feedbackEyebrow.textContent,'OBSERVATION 1 / 5');assert.ok(!nodes.numberTarget.hidden);assert.equal(nodes.targetTag.textContent,'목표값 공개');console.log('PASS: 3000 reachable missions; movement-gated timer; exact return; fast crossing and 0.4s expiry; pause; five-round results; original photo mode.');
+nodes.feedbackNext.onclick();step(1);assert.equal(nodes.feedbackTitle.textContent,'이번 탐사 최고 기록');nodes.feedbackNext.onclick();nodes.briefCancel.onclick();nodes.photoMode.onclick();step(1);assert.ok(!nodes.targetCanvas.hidden);assert.ok(!lastOptions.hideMagnitude);nodes.briefStart.onclick();step(20);assert.ok(nodes.numberTarget.hidden);assert.ok(Number(nodes.timeValue.textContent)<30);nodes.submitObservation.onclick();step(1);assert.equal(nodes.feedbackEyebrow.textContent,'OBSERVATION 1 / 5');assert.ok(!nodes.numberTarget.hidden);assert.equal(nodes.targetTag.textContent,'목표값 공개');console.log('PASS: 3000 reachable missions; movement-gated timer; exact return; fast crossing and 0.4s expiry; pause; five-round results; original photo mode.');
 
 // Daily briefing preference: independent modes, persistent storage, next-day reset.
 const saved=new Map();context.window.localStorage={getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v),removeItem:k=>saved.delete(k)};
@@ -34,8 +34,8 @@ nodes.todayRecords.onclick();assert.ok(nodes.photoTopFive.innerHTML.includes('�
 saved.set('starlight.dailyRecords.v1',JSON.stringify({date:'2026-10-22',photo:1000,magnitude:900}));
 nodes.todayRecords.onclick();assert.ok(nodes.photoTopFive.innerHTML.includes('1,000'));assert.ok(nodes.photoTopFive.innerHTML.includes('A+'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('900'));nodes.recordsClose.onclick();
 nodes.photoMode.onclick();nodes.briefStart.onclick();step(20);nodes.todayRecords.onclick();step(1);const clock=nodes.timeValue.textContent;step(10);assert.equal(nodes.timeValue.textContent,clock);nodes.recordsClose.onclick();nodes.pause.onclick();
-for(let r=0;r<5;r++){nodes.submitObservation.onclick();step(1);if(r<4){nodes.feedbackNext.onclick();step(20);}}
-assert.equal(JSON.parse(saved.get('starlight.dailyRecords.v1')).photo[0],1000);assert.equal(JSON.parse(saved.get('starlight.dailyRecords.v1')).photo.length,2);
+for(let r=0;r<5;r++){nodes.submitObservation.onclick();step(1);assert.equal(JSON.parse(saved.get('starlight.dailyRecords.v1')).photo.length,Math.min(r+2,5),'each observation saves immediately');if(r<4){nodes.feedbackNext.onclick();step(20);}}
+assert.equal(JSON.parse(saved.get('starlight.dailyRecords.v1')).photo[0],1000);assert.equal(JSON.parse(saved.get('starlight.dailyRecords.v1')).photo.length,5);
 nodes.feedbackDialog.close();nodes.todayRecords.onclick();context.Date=class extends Date {constructor(){super('2026-10-23T12:00:00');}};step(1);assert.ok(nodes.photoTopFive.innerHTML.includes('아직 기록이 없어요'));assert.ok(nodes.magnitudeTopFive.innerHTML.includes('아직 기록이 없어요'));
 console.log('PASS: localStorage read/write, lower score preserves best, both modes, pause, rollover while modal open.');
 
@@ -51,10 +51,9 @@ context.window.localStorage={getItem(k){if(k===recordKey&&failRead)throw Error('
 vm.runInNewContext(fs.readFileSync('game.js','utf8'),context);
 function completeChallenge(mode){
   nodes.recordsDialog.close();nodes.feedbackDialog.close();nodes[mode+'Mode'].onclick();nodes.briefStart.onclick();
-  for(let i=0;i<5;i++){
+  for(let i=0;i<1;i++){
     step(20);if(mode==='magnitude')key('ArrowRight');
     nodes.submitObservation.onclick();step(1);
-    if(i<4)nodes.feedbackNext.onclick();
   }
   nodes.feedbackDialog.close();
 }

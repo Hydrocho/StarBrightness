@@ -2,7 +2,7 @@ const fs=require('node:fs'),vm=require('node:vm'),assert=require('node:assert/st
 const nodes={},saved=new Map();
 function node(id){return nodes[id]??=( {innerHTML:'',textContent:'',value:'',events:{},dataset:{},classList:{toggle(){}},addEventListener(name,fn){this.events[name]=fn;},querySelectorAll(){return [];},querySelector(selector){return node(selector);},setAttribute(){},setPointerCapture(){},scrollIntoView(){},focus(){},showModal(){this.open=true;},close(){this.open=false;}} );}
 let day='2026-10-29T12:00:00';
-const context={window:{},document:{getElementById:node},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v)},Date:class extends Date{constructor(){super(day);}},Math};
+const context={window:{},document:{getElementById:node},localStorage:{getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v)},Date:class extends Date{constructor(...args){super(...(args.length?args:[day]));}},Math};
 vm.createContext(context);
 vm.runInContext(fs.readFileSync('physics.js','utf8'),context);
 vm.runInContext(fs.readFileSync('comparison.js','utf8'),context);
@@ -108,3 +108,31 @@ for(let i=0;i<5;i++)input(i,'0');for(let i=0;i<7;i++)click({group:String(i),id:'
 node('compareExam').onsubmit({preventDefault(){}});context.window.StarComparison.renderRecords();
 assert.ok(node('comparisonTopFive').innerHTML.includes('결과 보기'));assert.ok(node('comparisonStorageNote').textContent.includes('현재 페이지'));
 console.log('PASS: practice distance changes; exam answer entry and incomplete submission; order removal; saved result reopening; reload; day rollover; blocked-storage fallback.');
+
+// Quiz history is chronological, with actual start/end timestamps and legacy fallback.
+const quizKey='starlight.comparisonRecords.v1';
+context.localStorage={getItem:k=>saved.get(k)||null,setItem:(k,v)=>saved.set(k,v)};
+day='2026-10-30T13:00:00';
+const base=JSON.parse(saved.get(quizKey))[0];
+saved.set(quizKey,JSON.stringify(Array.from({length:6},(_,i)=>({...base,date:'2026-10-30',score:1000-i*100,startedAt:new Date('2026-10-30T10:00:00').toISOString(),endedAt:new Date('2026-10-30T'+String(10+i).padStart(2,'0')+':10:00').toISOString()}))));
+vm.runInContext(fs.readFileSync('comparison.js','utf8'),context);context.window.StarComparison.renderRecords();
+const newestHTML=node('comparisonTopFive').innerHTML;
+assert.ok(newestHTML.indexOf('500<')<newestHTML.indexOf('900<'));assert.ok(!newestHTML.includes('1,000'));
+assert.ok(newestHTML.includes('시작 ')&&newestHTML.includes('종료 '));
+context.window.StarComparison.open();click({mode:'exam'});
+const startExpected=new Date(day).toISOString();
+day='2026-10-30T16:05:27';
+for(let i=0;i<5;i++)input(i,'0');for(let i=0;i<7;i++)click({group:String(i),id:'A'});for(const id of ['A','B','C','D','E'])click({order:id});
+node('compareExam').onsubmit({preventDefault(){}});
+const newest=JSON.parse(saved.get(quizKey));assert.equal(newest.length,5);assert.equal(newest[0].startedAt,startExpected);assert.equal(newest[0].endedAt,new Date(day).toISOString());
+context.window.StarComparison.renderRecords();assert.ok(node('comparisonTopFive').innerHTML.includes('16:05:27'));
+// Starting a new exam replaces the prior start time, including after midnight.
+day='2026-10-30T23:59:00';click({},'compareNew');day='2026-10-31T00:01:00';
+for(let i=0;i<5;i++)input(i,'0');for(let i=0;i<7;i++)click({group:String(i),id:'A'});for(const id of ['A','B','C','D','E'])click({order:id});
+node('compareExam').onsubmit({preventDefault(){}});
+const midnight=JSON.parse(saved.get(quizKey));assert.equal(midnight.length,1);assert.equal(midnight[0].date,'2026-10-31');assert.equal(midnight[0].startedAt,new Date('2026-10-30T23:59:00').toISOString());
+// Old records retain known completion times; a missing start time is not invented.
+saved.set(quizKey,JSON.stringify([{...base,date:'2026-10-31',startedAt:undefined,endedAt:undefined,time:'오후 02:10'},{...base,date:'2026-10-31',startedAt:undefined,endedAt:undefined,time:'오후 03:20'}]));
+vm.runInContext(fs.readFileSync('comparison.js','utf8'),context);context.window.StarComparison.renderRecords();
+assert.ok(node('comparisonTopFive').innerHTML.indexOf('03:20')<node('comparisonTopFive').innerHTML.indexOf('02:10'));assert.ok(node('comparisonTopFive').innerHTML.includes('시작 기록 없음'));
+console.log('PASS: latest-five ordering regardless of score, start/end seconds, fresh-exam timestamps, midnight completion date, and legacy timestamps.');

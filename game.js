@@ -52,9 +52,9 @@
     }
     return clean;
   }
-  function saveDailyRecord(){
-    if(s.results.length!==5)return;
-    pendingRecords.push({date:todayKey(),mode:s.variant,score:s.score});
+  function saveDailyRecord(points){
+    if(!Number.isInteger(points)||points<0||points>1000)return;
+    pendingRecords.push({date:todayKey(),mode:s.variant,score:points});
     const data=readRecords();
     try{
       window.localStorage.setItem(recordsKey,JSON.stringify(data));
@@ -71,7 +71,7 @@
       const scores=data[mode];
       $(mode+'TopFive').innerHTML=scores.length?scores.map((score,i)=>'<li><span class="record-place">'+(i+1)+'</span><strong>'+score.toLocaleString('ko-KR')+'<small>점</small></strong><b>'+P.rank(score)+'</b></li>').join(''):'<li class="record-empty">아직 기록이 없어요</li>';
     }
-    $('recordsNote').textContent=recordsStorageFailed?'저장소 접근에 문제가 있어 일부 기록은 현재 페이지에서만 유지됩니다. 페이지를 닫으면 저장되지 않은 기록이 사라질 수 있습니다.':'사진·등급 맞추기는 5회 완료 후 평균 점수를 저장합니다. 각 모드 오늘의 상위 5개 · 1,000점 만점 · 같은 점수도 별도 기록';
+    $('recordsNote').textContent=recordsStorageFailed?'저장소 접근에 문제가 있어 일부 기록은 현재 페이지에서만 유지됩니다. 페이지를 닫으면 저장되지 않은 기록이 사라질 수 있습니다.':'사진·등급 맞추기는 매 관측이 끝날 때 해당 점수를 바로 저장합니다. 사진·등급: 오늘의 상위 5개 / 거리 퀴즈: 오늘의 최근 5개 · 1,000점 만점 · 같은 점수도 별도 기록';
   }
   function skipBriefing(){
     const key='starlight.briefing.'+s.variant;
@@ -137,8 +137,8 @@
     const targetApparent=P.magnitude(s.target,s.targetM),actualApparent=P.magnitude(s.distance,s.currentM);
     const points=P.score(targetApparent,actualApparent);
     s.results.push({targetApparent,actualApparent,points});
-    s.score=Math.round(s.results.reduce((sum,r)=>sum+r.points,0)/s.results.length);
-    if(s.results.length===5)saveDailyRecord();
+    s.score=Math.max(...s.results.map(r=>r.points));
+    saveDailyRecord(points);
     s.mode='review';s.hold=0;drag=null;$('pause').hidden=true;s.dirty=true;
     $('feedbackEyebrow').textContent='OBSERVATION '+s.results.length+' / 5';
     $('feedbackTitle').textContent=points>=950?'놀라운 관측 감각!':points>=800?'목표에 가까워졌어요!':'다음 별빛에 다시 도전!';
@@ -150,8 +150,8 @@
   }
   function summary(){
     s.mode='done';s.dirty=true;
-    $('feedbackEyebrow').textContent='EXPEDITION COMPLETE';$('feedbackTitle').textContent='최종 탐사 등급';
-    $('feedbackLead').textContent='5회 관측의 평균 점수입니다.';
+    $('feedbackEyebrow').textContent='EXPEDITION COMPLETE';$('feedbackTitle').textContent='이번 탐사 최고 기록';
+    $('feedbackLead').textContent='5회 관측 중 최고 점수입니다. 각 관측 점수는 오늘의 기록에 따로 저장되었습니다.';
     $('feedbackStats').innerHTML='';
     $('feedbackExplanation').textContent=s.variant==='magnitude'?'가까우면 밝아지고 등급 숫자는 작아져요. 멀어지면 어두워지고 숫자는 커져요.':'실제 밝기가 다른 별도 거리가 다르면 같은 밝기로 보일 수 있어요.';
     $('feedbackTable').innerHTML='';$('feedbackNext').textContent='다시 도전하기';revealScore(s.score);
